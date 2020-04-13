@@ -37,11 +37,13 @@ u8 *m_option_rom = (u8 *)BASE_ADDR_OPTION_ROM;
 u8 m_buffer_rx[PROT_MAX_PACKET_SIZE];
 u8 m_buffer_tx[PROT_MAX_PACKET_SIZE];
 
-// protocol receive buffer
+// protocol send/receive buffer
 u8 m_buffer_recv[sizeof(PROT_CTL) + PROT_MAX_PACKET_SIZE];
+u8 m_buffer_send[sizeof(PROT_CTL) + PROT_MAX_PACKET_SIZE];
 
+// protocol state
 u32 m_bytes_have = 0;
-u32 m_bytes_need = sizeof(PROT_CTL);
+u32 m_bytes_need = 0;
 
 void dma_rx_callback(void);
 void dma_tx_callback(void);
@@ -191,8 +193,7 @@ void dma_tx_callback(void)
 
 void handle_request(struct tcp_pcb *tpcb, PROT_CTL *request)
 {    
-    u8 buffer[sizeof(PROT_CTL) + PROT_MAX_PACKET_SIZE];
-    PROT_CTL *reply = (PROT_CTL *)&buffer;
+    PROT_CTL *reply = (PROT_CTL *)&m_buffer_send;
     bool ignore = false;
 
     reply->code = PROT_CTL_ERROR_FAILED;
@@ -349,6 +350,8 @@ void handle_request(struct tcp_pcb *tpcb, PROT_CTL *request)
         {
             PROT_CTL_ROM *rom_write = (PROT_CTL_ROM *)&request->data;
 
+            request->size -= sizeof(PROT_CTL_ROM);
+
             xil_printf(
                 "recv_callback(): PROT_CTL_ROM_WRITE: offset = 0x%x, size = 0x%x\n",
                 rom_write->offset, request->size
@@ -422,13 +425,15 @@ void handle_request(struct tcp_pcb *tpcb, PROT_CTL *request)
         err_t err;
 
         // send reply to the client
-        if ((err = tcp_write(tpcb, (void *)buffer, sizeof(PROT_CTL) + reply->size, TCP_WRITE_FLAG_COPY)) != ERR_OK)
+        if ((err = tcp_write(tpcb, (void *)&m_buffer_send, sizeof(PROT_CTL) + reply->size, TCP_WRITE_FLAG_COPY)) != ERR_OK)
         {
             xil_printf("tcp_write() ERROR %d\n", err);   
         }
-    }
+    }    
+}
 
-    // receive next request
+void recv_do(void)
+{
     m_bytes_have = 0;
     m_bytes_need = sizeof(PROT_CTL);
 }
@@ -455,6 +460,7 @@ err_t recv_callback(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
 
 #endif
 
+    // handle received data
     while (copied < p->len)
     {
         PROT_CTL *request = (PROT_CTL *)&m_buffer_recv;
@@ -472,8 +478,11 @@ err_t recv_callback(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
 
         if (m_bytes_need == m_bytes_have)
         {
-            // handle receied request
+            // handle received request
             handle_request(tpcb, request);
+
+            // indicate to receive next request
+            recv_do();
         }
         
         copied += len;
@@ -491,6 +500,9 @@ void error_callback(void *arg, err_t err)
     
     m_connection -= 1;
     m_tpcb = NULL; 
+
+    // reset protocol state
+    recv_do();
 }
 
 err_t accept_callback(void *arg, struct tcp_pcb *newpcb, err_t err)
@@ -565,6 +577,9 @@ int start_application(u16 port)
     dma_rx_queue();    
 
 #endif
+
+    // indicate to receive requests
+    recv_do();
 
     // listen for connections
     if (!(pcb = tcp_listen(pcb))) 
