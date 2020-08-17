@@ -1,27 +1,27 @@
 
-// enable debuge messages output
-#define DBG
-
 #ifdef _X86_
 
 #error x86 is not supported
 
 #endif
 
-#ifdef DBG
+extern "C"
+{
+// heap alloc
+void *bd_alloc(size_t size);
 
-// print debug messages
-#define dbg_printf printf
+// heap free
+void bd_free(void *addr);
 
-#else
+// sleep for specified milliseconds
+void bd_sleep(int msec);
 
-#define dbg_printf
-
-#endif
-
-// memory allocation functions
-#define M_ALLOC(_size_) malloc((_size_))
-#define M_FREE(_addr_) free((_addr_))
+// switch execution to other process/thread
+void bd_yeld(void);
+    
+// debug output
+void bd_printf(char *format, ...);
+}
 
 #pragma pack(1)
 
@@ -53,6 +53,20 @@ typedef struct _HVBD_INFO
 
 } HVBD_INFO;
 
+typedef enum _HVBD_PTE_SIZE
+{
+    HVBD_PTE_SIZE_4K,
+    HVBD_PTE_SIZE_2M,
+    HVBD_PTE_SIZE_1G
+
+} HVBD_PTE_SIZE;    
+
+/*
+    Memory protection flags for backdoor_modify_pt() and backdoor_modify_ept()
+*/
+#define HVBD_MEM_EXECUTABLE 1
+#define HVBD_MEM_WRITEABLE  2
+
 int backdoor_invalidate_caches(void);
 
 int backdoor_info(HVBD_INFO *info);
@@ -69,8 +83,8 @@ int backdoor_virt_write_32(uint64_t addr, uint32_t val);
 int backdoor_virt_write_16(uint64_t addr, uint16_t val);
 int backdoor_virt_write_8(uint64_t addr, uint8_t val);
 
-int backdoor_virt_map(uint64_t pte_index, uint64_t phys_addr);
-int backdoor_virt_unmap(uint64_t pte_index);
+int backdoor_virt_map(uint64_t pte_index, uint64_t phys_addr, uint64_t *entry);
+int backdoor_virt_unmap(uint64_t pte_index, uint64_t entry);
 
 int backdoor_phys_read(uint64_t addr, void *buff, int size);
 int backdoor_phys_read_64(uint64_t addr, uint64_t *val);
@@ -89,6 +103,7 @@ int backdoor_vmwrite(uint64_t val, uint64_t data);
 
 int backdoor_ept_list(EPT_INFO *ept_list);
 int backdoor_ept_dump(uint64_t pml4_addr);
+int backdoor_ept_info_addr(uint64_t *addr);
 
 int backdoor_phys_translate(uint64_t addr, uint64_t *ret, uint64_t pml4_addr);
 int backdoor_phys_update(uint64_t addr, uint64_t entry, uint64_t *old, uint64_t pml4_addr);
@@ -97,6 +112,12 @@ int backdoor_virt_translate(uint64_t addr, uint64_t *ret, uint64_t pml4_addr, ui
 int backdoor_virt_update(uint64_t addr, uint64_t entry, uint64_t *old, uint64_t pml4_addr, uint64_t ept_addr);
 
 int backdoor_sk_info(SK_INFO *sk_info, uint64_t *call_count);
+int backdoor_sk_info_addr(uint64_t *addr);
 int backdoor_sk_base(SK_INFO *sk_info, uint64_t *sk_addr, uint64_t *skci_addr);
 
-int backdoor_read_debug_messages(void);
+int backdoor_modify_ept(uint32_t flags, uint64_t addr, uint64_t pml4_addr);
+int backdoor_modify_pt(uint32_t flags, uint64_t addr, uint64_t pml4_addr, uint64_t ept_addr);
+
+int backdoor_pte_addr(uint64_t addr, uint64_t *pte_addr, HVBD_PTE_SIZE *pte_size, uint64_t pml4_addr, uint64_t ept_addr);
+
+int backdoor_ept_addr(uint64_t *addr);

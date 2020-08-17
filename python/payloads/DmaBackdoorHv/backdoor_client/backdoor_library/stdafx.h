@@ -13,6 +13,9 @@
 #include <sys/types.h>  
 #include <sys/stat.h> 
 
+#pragma intrinsic(memset)
+#pragma intrinsic(memcpy)
+
 #include <windows.h>
 #include <TlHelp32.h>
 
@@ -20,8 +23,6 @@
 
 #include "common_asm.h"
 #include "virtual_mem.h"
-#include "service.h"
-#include "winio.h"
 
 #include "../vmx.h"
 #include "../backdoor_client.h"
